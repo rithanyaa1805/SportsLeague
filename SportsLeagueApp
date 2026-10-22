@@ -1,0 +1,460 @@
+package sportsleague;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.*;
+public class SportsLeagueApp {
+    private static final Scanner sc = new Scanner(System.in);
+    private static final Map<Integer, Team> teams = new LinkedHashMap<>();
+    private static final Map<Integer, Player> players = new LinkedHashMap<>();
+    private static final List<Fixture> fixtures = new ArrayList<>();
+    private static final List<Match> matches = new ArrayList<>();
+    private static final List<DisciplinaryRecord> disciplinaryLog = new ArrayList<>();
+    private static int nextTeamId = 1, nextPlayerId = 1, nextFixtureId = 1, nextDisciplineId = 1;
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
+    public static void main(String[] args) {
+        seedDemoTeams();
+        boolean running = true;
+        System.out.println("==============================================");
+        System.out.println("      SPORTS LEAGUE & MATCH SCHEDULING");
+        System.out.println("==============================================");
+        while (running) {
+            printMenu();
+            int choice = readInt("Enter your choice: ", 1, 8);
+            try {
+                switch (choice) {
+                    case 1: addTeam(); break;
+                    case 2: addPlayer(); break;
+                    case 3: createFixture(); break;
+                    case 4: recordMatchResult(); break;
+                    case 5: viewFixturesAndResults(); break;
+                    case 6: viewStandings(); break;
+                    case 7: addDisciplinaryRecord(); break;
+                    case 8:
+                        running = false;
+                        System.out.println("Thank you for using Sports League Manager. Goodbye!");
+                        break;
+                    default: System.out.println("Invalid menu choice.");
+                }
+            } catch (IllegalArgumentException ex) {
+                System.out.println("Error: " + ex.getMessage());
+            } catch (Exception ex) {
+                System.out.println("Unexpected error handled: " + ex.getMessage());
+            }
+            System.out.println();
+        }
+        sc.close();
+    }
+
+    private static void printMenu() {
+        System.out.println("\n--------------- MAIN MENU ----------------");
+        System.out.println("1. Add Team");
+        System.out.println("2. Add Player");
+        System.out.println("3. Create Fixture");
+        System.out.println("4. Record Match / Update Result");
+        System.out.println("5. View Fixtures and Results");
+        System.out.println("6. View Standings");
+        System.out.println("7. View Disciplinary Log / Add Record");
+        System.out.println("8. Exit");
+    }
+
+    private static void seedDemoTeams() {
+        Team t1 = new Team(nextTeamId++, "Falcons");
+        Team t2 = new Team(nextTeamId++, "Tigers");
+        Team t3 = new Team(nextTeamId++, "Warriors");
+        teams.put(t1.getId(), t1);
+        teams.put(t2.getId(), t2);
+        teams.put(t3.getId(), t3);
+        System.out.println("Demo teams loaded: Falcons, Tigers, Warriors.");
+        System.out.println("You can use these teams immediately or add more.");
+    }
+
+    private static void addTeam() {
+        String name = readNonEmpty("Enter team name: ");
+        for (Team t : teams.values()) {
+            if (t.getName().equalsIgnoreCase(name)) {
+                throw new IllegalArgumentException("A team with this name already exists.");
+            }
+        }
+        Team team = new Team(nextTeamId++, name);
+        teams.put(team.getId(), team);
+        System.out.println("Team added successfully. Team ID: " + team.getId());
+    }
+
+    private static void addPlayer() {
+        if (teams.isEmpty()) {
+            System.out.println("Add a team before registering players.");
+            return;
+        }
+        displayTeams();
+        int teamId = readInt("Enter registered team ID: ", 1, Integer.MAX_VALUE);
+        Team team = teams.get(teamId);
+        if (team == null) {
+            throw new IllegalArgumentException("Team ID is not registered.");
+        }
+        String name = readNonEmpty("Enter player name: ");
+        int jersey = readInt("Enter jersey number (1-99): ", 1, 99);
+        for (Player p : players.values()) {
+            if (p.getTeam().getId() == teamId && p.getJerseyNumber() == jersey) {
+                throw new IllegalArgumentException("That jersey number is already used by this team.");
+            }
+        }
+        Player player = new Player(nextPlayerId++, name, jersey, team);
+        players.put(player.getId(), player);
+        team.addPlayer(player);
+        System.out.println("Player registered. Player ID: " + player.getId() + ", Team: " + team.getName());
+    }
+
+    private static void createFixture() {
+        if (teams.size() < 2) {
+            System.out.println("At least two registered teams are required.");
+            return;
+        }
+        displayTeams();
+        int homeId = readInt("Enter home team ID: ", 1, Integer.MAX_VALUE);
+        int awayId = readInt("Enter away team ID: ", 1, Integer.MAX_VALUE);
+        Team home = teams.get(homeId);
+        Team away = teams.get(awayId);
+        if (home == null || away == null) {
+            throw new IllegalArgumentException("Both team IDs must belong to registered teams.");
+        }
+        if (homeId == awayId) {
+            throw new IllegalArgumentException("A team cannot play against itself.");
+        }
+        LocalDateTime dateTime = readDateTime("Enter match date and time (yyyy-MM-dd HH:mm): ");
+        for (Fixture f : fixtures) {
+            if (f.getDateTime().equals(dateTime) &&
+                (f.involves(homeId) || f.involves(awayId))) {
+                throw new IllegalArgumentException("Scheduling clash: a team already has a fixture at that time.");
+            }
+        }
+        Fixture fixture = new Fixture(nextFixtureId++, home, away, dateTime);
+        fixtures.add(fixture);
+        System.out.println("Fixture created successfully:");
+        System.out.println(fixture);
+    }
+
+    private static void recordMatchResult() {
+        List<Fixture> pending = new ArrayList<>();
+        for (Fixture f : fixtures) {
+            if (!f.isCompleted()) pending.add(f);
+        }
+        if (pending.isEmpty()) {
+            System.out.println("No pending fixtures. Create a fixture first.");
+            return;
+        }
+        System.out.println("\nPending fixtures:");
+        for (Fixture f : pending) System.out.println(f);
+        int id = readInt("Enter fixture ID to record/update: ", 1, Integer.MAX_VALUE);
+        Fixture selected = null;
+        for (Fixture f : pending) if (f.getId() == id) selected = f;
+        if (selected == null) throw new IllegalArgumentException("Pending fixture ID not found.");
+        int homeGoals = readInt("Enter " + selected.getHomeTeam().getName() + " goals/runs: ", 0, 999);
+        int awayGoals = readInt("Enter " + selected.getAwayTeam().getName() + " goals/runs: ", 0, 999);
+        Result result = new Result(homeGoals, awayGoals);
+        Match match = new Match(selected, result);
+        selected.setCompleted(true);
+        matches.add(match);
+        System.out.println("\nResult recorded successfully:");
+        System.out.println(match);
+        System.out.println("Standings have been updated automatically.");
+    }
+
+    private static void viewFixturesAndResults() {
+        System.out.println("\n--------------- FIXTURES -----------------");
+        if (fixtures.isEmpty()) System.out.println("No fixtures scheduled.");
+        for (Fixture f : fixtures) System.out.println(f);
+        System.out.println("\n---------------- RESULTS -----------------");
+        if (matches.isEmpty()) System.out.println("No match results recorded.");
+        for (Match m : matches) System.out.println(m);
+    }
+
+    private static void viewStandings() {
+        if (teams.isEmpty()) {
+            System.out.println("No teams registered.");
+            return;
+        }
+        List<Standing> table = new ArrayList<>();
+        for (Team team : teams.values()) table.add(new Standing(team));
+        Map<Integer, Standing> byTeam = new HashMap<>();
+        for (Standing s : table) byTeam.put(s.getTeam().getId(), s);
+
+        for (Match match : matches) {
+            Team home = match.getFixture().getHomeTeam();
+            Team away = match.getFixture().getAwayTeam();
+            Result r = match.getResult();
+            Standing hs = byTeam.get(home.getId()), as = byTeam.get(away.getId());
+            hs.recordMatch(r.getHomeScore(), r.getAwayScore());
+            as.recordMatch(r.getAwayScore(), r.getHomeScore());
+        }
+        table.sort((a, b) -> {
+            if (a.getPoints() != b.getPoints()) return Integer.compare(b.getPoints(), a.getPoints());
+            if (a.getGoalDifference() != b.getGoalDifference())
+                return Integer.compare(b.getGoalDifference(), a.getGoalDifference());
+            if (a.getGoalsFor() != b.getGoalsFor()) return Integer.compare(b.getGoalsFor(), a.getGoalsFor());
+            return a.getTeam().getName().compareToIgnoreCase(b.getTeam().getName());
+        });
+
+        System.out.println("\n================ LEAGUE STANDINGS ================");
+        System.out.printf("%-5s %-15s %3s %3s %3s %3s %3s %3s %3s%n",
+                "Pos", "Team", "P", "W", "D", "L", "GF", "GA", "Pts");
+        int position = 1;
+        for (Standing s : table) {
+            System.out.printf("%-5d %-15s %3d %3d %3d %3d %3d %3d %3d%n",
+                    position++, s.getTeam().getName(), s.getPlayed(), s.getWon(), s.getDrawn(),
+                    s.getLost(), s.getGoalsFor(), s.getGoalsAgainst(), s.getPoints());
+        }
+        System.out.println("Tie-breakers: points, goal difference, goals scored, team name.");
+    }
+
+    private static void addDisciplinaryRecord() {
+        System.out.println("\n1. Add disciplinary record");
+        System.out.println("2. View disciplinary log");
+        int choice = readInt("Choose: ", 1, 2);
+        if (choice == 2) {
+            viewDisciplinaryLog();
+            return;
+        }
+        if (teams.isEmpty()) {
+            System.out.println("No teams registered.");
+            return;
+        }
+        displayTeams();
+        int teamId = readInt("Enter team ID: ", 1, Integer.MAX_VALUE);
+        Team team = teams.get(teamId);
+        if (team == null) throw new IllegalArgumentException("Team ID is not registered.");
+
+        List<Player> teamPlayers = team.getPlayers();
+        Player player = null;
+        if (!teamPlayers.isEmpty()) {
+            System.out.println("Players in " + team.getName() + ":");
+            for (Player p : teamPlayers) System.out.println(p);
+            int playerId = readInt("Enter player ID (0 for team-level penalty): ", 0, Integer.MAX_VALUE);
+            if (playerId != 0) {
+                player = players.get(playerId);
+                if (player == null || player.getTeam().getId() != teamId) {
+                    throw new IllegalArgumentException("Player must be registered under the selected team.");
+                }
+            }
+        } else {
+            System.out.println("No players registered for this team; record will be team-level.");
+        }
+        System.out.println("Action types: Yellow Card, Red Card, Suspension, Penalty");
+        String action = readNonEmpty("Enter action type: ");
+        String details = readNonEmpty("Enter details/reason: ");
+        DisciplinaryRecord record = new DisciplinaryRecord(nextDisciplineId++, team, player, action, details);
+        disciplinaryLog.add(record);
+        System.out.println("Disciplinary record saved:");
+        System.out.println(record);
+    }
+
+    private static void viewDisciplinaryLog() {
+        System.out.println("\n----------- DISCIPLINARY LOG -----------");
+        if (disciplinaryLog.isEmpty()) {
+            System.out.println("No disciplinary records found.");
+            return;
+        }
+        for (DisciplinaryRecord d : disciplinaryLog) System.out.println(d);
+    }
+
+    private static void displayTeams() {
+        System.out.println("\nRegistered teams:");
+        for (Team t : teams.values()) {
+            System.out.println("ID " + t.getId() + " - " + t.getName() + " (Players: " + t.getPlayers().size() + ")");
+        }
+    }
+
+    private static int readInt(String prompt, int min, int max) {
+        while (true) {
+            System.out.print(prompt);
+            String input = sc.nextLine().trim();
+            try {
+                int value = Integer.parseInt(input);
+                if (value < min || value > max) {
+                    System.out.println("Invalid input. Enter a number from " + min + " to " + max + ".");
+                    continue;
+                }
+                return value;
+            } catch (NumberFormatException e) {
+                System.out.println("Invalid input. Please enter a whole number.");
+            }
+        }
+    }
+
+    private static String readNonEmpty(String prompt) {
+        while (true) {
+            System.out.print(prompt);
+            String value = sc.nextLine().trim();
+            if (!value.isEmpty()) return value;
+            System.out.println("Input cannot be empty. Please try again.");
+        }
+    }
+
+    private static LocalDateTime readDateTime(String prompt) {
+        while (true) {
+            System.out.print(prompt);
+            String input = sc.nextLine().trim();
+            try {
+                return LocalDateTime.parse(input, DATE_FORMAT);
+            } catch (DateTimeParseException e) {
+                System.out.println("Invalid date/time. Use the exact format yyyy-MM-dd HH:mm (example: 2026-11-05 16:30).");
+            }
+        }
+    }
+}
+
+class Team {
+    private final int id;
+    private String name;
+    private final List<Player> players = new ArrayList<>();
+
+    public Team(int id, String name) {
+        this.id = id;
+        setName(name);
+    }
+    public int getId() { return id; }
+    public String getName() { return name; }
+    public void setName(String name) {
+        if (name == null || name.trim().isEmpty()) throw new IllegalArgumentException("Team name cannot be empty.");
+        this.name = name.trim();
+    }
+    public List<Player> getPlayers() { return Collections.unmodifiableList(players); }
+    public void addPlayer(Player player) {
+        if (player == null) throw new IllegalArgumentException("Player cannot be null.");
+        players.add(player);
+    }
+}
+
+class Player {
+    private final int id;
+    private String name;
+    private int jerseyNumber;
+    private final Team team;
+
+    public Player(int id, String name, int jerseyNumber, Team team) {
+        this.id = id;
+        setName(name);
+        setJerseyNumber(jerseyNumber);
+        if (team == null) throw new IllegalArgumentException("Player must belong to a registered team.");
+        this.team = team;
+    }
+    public int getId() { return id; }
+    public String getName() { return name; }
+    public void setName(String name) {
+        if (name == null || name.trim().isEmpty()) throw new IllegalArgumentException("Player name cannot be empty.");
+        this.name = name.trim();
+    }
+    public int getJerseyNumber() { return jerseyNumber; }
+    public void setJerseyNumber(int number) {
+        if (number < 1 || number > 99) throw new IllegalArgumentException("Jersey number must be 1-99.");
+        this.jerseyNumber = number;
+    }
+    public Team getTeam() { return team; }
+    @Override public String toString() {
+        return "Player ID " + id + " | " + name + " | Jersey " + jerseyNumber + " | Team " + team.getName();
+    }
+}
+
+class Fixture {
+    private final int id;
+    private final Team homeTeam, awayTeam;
+    private final LocalDateTime dateTime;
+    private boolean completed;
+
+    public Fixture(int id, Team homeTeam, Team awayTeam, LocalDateTime dateTime) {
+        if (homeTeam == null || awayTeam == null || dateTime == null) throw new IllegalArgumentException("Fixture fields cannot be null.");
+        if (homeTeam.getId() == awayTeam.getId()) throw new IllegalArgumentException("A team cannot play itself.");
+        this.id = id; this.homeTeam = homeTeam; this.awayTeam = awayTeam; this.dateTime = dateTime;
+    }
+    public int getId() { return id; }
+    public Team getHomeTeam() { return homeTeam; }
+    public Team getAwayTeam() { return awayTeam; }
+    public LocalDateTime getDateTime() { return dateTime; }
+    public boolean isCompleted() { return completed; }
+    public void setCompleted(boolean completed) { this.completed = completed; }
+    public boolean involves(int teamId) { return homeTeam.getId() == teamId || awayTeam.getId() == teamId; }
+    @Override public String toString() {
+        return "Fixture #" + id + ": " + homeTeam.getName() + " vs " + awayTeam.getName()
+                + " | " + dateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+                + " | " + (completed ? "COMPLETED" : "SCHEDULED");
+    }
+}
+
+class Result {
+    private final int homeScore, awayScore;
+    public Result(int homeScore, int awayScore) {
+        if (homeScore < 0 || awayScore < 0) throw new IllegalArgumentException("Scores cannot be negative.");
+        this.homeScore = homeScore; this.awayScore = awayScore;
+    }
+    public int getHomeScore() { return homeScore; }
+    public int getAwayScore() { return awayScore; }
+    public String outcome() {
+        if (homeScore > awayScore) return "Home team won";
+        if (awayScore > homeScore) return "Away team won";
+        return "Draw";
+    }
+}
+
+class Match {
+    private final Fixture fixture;
+    private final Result result;
+    public Match(Fixture fixture, Result result) {
+        if (fixture == null || result == null) throw new IllegalArgumentException("Match requires a fixture and result.");
+        this.fixture = fixture; this.result = result;
+    }
+    public Fixture getFixture() { return fixture; }
+    public Result getResult() { return result; }
+    @Override public String toString() {
+        return fixture.getHomeTeam().getName() + " " + result.getHomeScore() + " - "
+                + result.getAwayScore() + " " + fixture.getAwayTeam().getName()
+                + " | " + result.outcome();
+    }
+}
+
+class Standing {
+    private final Team team;
+    private int played, won, drawn, lost, goalsFor, goalsAgainst, points;
+    public Standing(Team team) { this.team = team; }
+    public Team getTeam() { return team; }
+    public int getPlayed() { return played; }
+    public int getWon() { return won; }
+    public int getDrawn() { return drawn; }
+    public int getLost() { return lost; }
+    public int getGoalsFor() { return goalsFor; }
+    public int getGoalsAgainst() { return goalsAgainst; }
+    public int getGoalDifference() { return goalsFor - goalsAgainst; }
+    public int getPoints() { return points; }
+    public void recordMatch(int scored, int conceded) {
+        played++;
+        goalsFor += scored;
+        goalsAgainst += conceded;
+        if (scored > conceded) { won++; points += 3; }
+        else if (scored == conceded) { drawn++; points += 1; }
+        else lost++;
+    }
+}
+
+class DisciplinaryRecord {
+    private final int id;
+    private final Team team;
+    private final Player player; // null means team-level record
+    private final String action, details;
+    private final LocalDateTime createdAt;
+
+    public DisciplinaryRecord(int id, Team team, Player player, String action, String details) {
+        if (team == null) throw new IllegalArgumentException("A disciplinary record must reference a team.");
+        if (action == null || action.trim().isEmpty()) throw new IllegalArgumentException("Action type cannot be empty.");
+        if (details == null || details.trim().isEmpty()) throw new IllegalArgumentException("Details cannot be empty.");
+        if (player != null && player.getTeam().getId() != team.getId())
+            throw new IllegalArgumentException("Player must belong to the selected team.");
+        this.id = id; this.team = team; this.player = player;
+        this.action = action.trim(); this.details = details.trim(); this.createdAt = LocalDateTime.now();
+    }
+    @Override public String toString() {
+        String subject = (player == null) ? "Team-level" : player.getName() + " (Player ID " + player.getId() + ")";
+        return "Record #" + id + " | Team: " + team.getName() + " | " + subject
+                + " | Action: " + action + " | Details: " + details
+                + " | Recorded: " + createdAt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+    }
+}
